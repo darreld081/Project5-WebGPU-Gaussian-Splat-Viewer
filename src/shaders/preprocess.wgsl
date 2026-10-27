@@ -116,6 +116,22 @@ fn computeColorFromSH(dir: vec3<f32>, v_idx: u32, sh_deg: u32) -> vec3<f32> {
     return  max(vec3<f32>(0.), result);
 }
 
+// check for view-frustum culling
+fn should_be_culled(pos: vec4<f32>) 
+-> bool {
+    var toBeCulled = true;
+
+    if pos.w > 0. {
+        let bounds = pos.xyz / pos.w;
+         let threshold = 1.2;
+        toBeCulled = abs(bounds.x) > threshold 
+        || abs(bounds.y) > threshold
+        || bounds.z < 0
+        || bounds.z > 1;
+    }
+    return toBeCulled;
+}
+
 @compute @workgroup_size(workgroupSize,1,1)
 fn preprocess(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) wgs: vec3<u32>) {
     let index = gid.x;
@@ -124,14 +140,11 @@ fn preprocess(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgr
     let v1 = unpack2x16float(vert.pos_opacity[0]);
     let v2 = unpack2x16float(vert.pos_opacity[1]);
     let pos = camera.proj * camera.view * vec4<f32>(v1.x, v1.y, v2.x, 1.);
-    var splatPos = vec2<f32>(2., 2.);
-    if pos.w > 0. {
-        splatPos = pos.xy / pos.w;
+
+    if should_be_culled(pos) == false {
+        let ndc = pos.xyz / pos.w;
+        let slot = atomicAdd(&sort_infos.keys_size, 1u);
+        splatArr[slot].center = pack2x16float(ndc.xy);
+        let keys_per_dispatch = workgroupSize * sortKeyPerThread; 
     }
-    splatArr[index].center = pack2x16float(splatPos);
-
-    //TODO: set up pipeline as described in instruction
-
-    let keys_per_dispatch = workgroupSize * sortKeyPerThread; 
-    // increment DispatchIndirect.dispatchx each time you reach limit for one dispatch of keys
 }

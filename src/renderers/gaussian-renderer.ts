@@ -69,6 +69,12 @@ export default function get_renderer(
     entries: [{ binding: 0, resource: { buffer: camera_buffer } }],
   });
 
+  const culling_bind = device.createBindGroup({
+    label: 'culling_bind',
+    layout: preprocess_pipeline.getBindGroupLayout(2),
+    entries: [{ binding: 0, resource: { buffer: sorter.sort_info_buffer } }],
+  });
+
   // ===============================================
   //    Create Render Pipeline and Bind Groups
   // ===============================================
@@ -95,12 +101,14 @@ export default function get_renderer(
     pass.setPipeline(preprocess_pipeline);
     pass.setBindGroup(0, pre_camera_bind);
     pass.setBindGroup(1, pre_gaussian_bind);
+    pass.setBindGroup(2, culling_bind);
     //calculate the size of each work group
     const workgroupSize = Math.ceil(pc.num_points / C.histogram_wg_size);
 
     //dispatch
     pass.dispatchWorkgroups(workgroupSize);
     pass.end();
+    encoder.copyBufferToBuffer(sorter.sort_info_buffer, 0, indirect_draw_buff, 4, 4);
   };
 
 
@@ -133,7 +141,7 @@ export default function get_renderer(
   // ===============================================
   return {
     frame: (encoder: GPUCommandEncoder, texture_view: GPUTextureView) => {
-      //run preprocess then render
+      device.queue.writeBuffer(sorter.sort_info_buffer, 0, nulling_data);
       preprocess(encoder);
       render(encoder, texture_view);
     },
