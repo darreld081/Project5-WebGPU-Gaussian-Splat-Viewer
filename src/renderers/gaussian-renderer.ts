@@ -67,19 +67,60 @@ export default function get_renderer(
   // ===============================================
   //    Create Render Pipeline and Bind Groups
   // ===============================================
-  
+  const indirect_draw_buff = createBuffer(device, 'indirect_draw_buffer',16, GPUBufferUsage.INDIRECT | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, new Uint32Array([6, pc.num_points, 0, 0]));
+
+  const shader = device.createShaderModule({ code: renderWGSL });
+  //create the render pipeline
+  const pipeline_render = device.createRenderPipeline({
+    label: 'pipeline_render',
+    layout: 'auto',
+    primitive: { topology: 'triangle-list',},
+    vertex: { module: shader, entryPoint: 'vs_main',},
+    fragment: {module: shader, entryPoint: 'fs_main', targets: [{ format: presentation_format }],},
+  });
+
+  //create the camera bind group
+  const camera_bind = device.createBindGroup({
+    label: 'camera_bind',
+    layout: pipeline_render.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: camera_buffer } }],
+  });
+
+  //create gaussian bind group
+  const gaussian_bind = device.createBindGroup({
+    label: 'gaussian_bind',
+    layout: pipeline_render.getBindGroupLayout(1),
+    entries: [{ binding: 0, resource: { buffer: pc.gaussian_3d_buffer } }],
+  });
 
   // ===============================================
   //    Command Encoder Functions
   // ===============================================
-  
+  const render = (encoder: GPUCommandEncoder, 
+    texture_view: GPUTextureView) => {
+      //setup the render pass
+    const pass = encoder.beginRenderPass({ label: 'pass',
+      colorAttachments: [ {
+          storeOp: 'store',
+          loadOp: 'clear',
+          view: texture_view,
+        }
+      ],
+    });
+    //render pass should use the render pipeline, camera and guassian binds and the indirect draw buffer to draw
+    pass.setPipeline(pipeline_render);
+    pass.setBindGroup(0, camera_bind);
+    pass.setBindGroup(1, gaussian_bind);
+    pass.drawIndirect(indirect_draw_buff, 0);
+    pass.end();
+  };
 
   // ===============================================
   //    Return Render Object
   // ===============================================
   return {
     frame: (encoder: GPUCommandEncoder, texture_view: GPUTextureView) => {
-      sorter.sort(encoder);
+      render(encoder, texture_view);
     },
     camera_buffer,
   };

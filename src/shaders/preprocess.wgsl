@@ -57,6 +57,7 @@ struct Gaussian {
 
 struct Splat {
     //TODO: store information for 2D splat rendering
+    placeholder: u32, // WGSL forbids empty structs; replace with real fields
 };
 
 //TODO: bind your data here
