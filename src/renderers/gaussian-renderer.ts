@@ -35,6 +35,7 @@ export default function get_renderer(
   // ===============================================
 
   const nulling_data = new Uint32Array([0]);
+  const splatBuffer = createBuffer( device, 'splatBuffer', pc.num_points * 4, GPUBufferUsage.STORAGE);
 
   // ===============================================
   //    Create Compute Pipeline and Bind Groups
@@ -52,17 +53,21 @@ export default function get_renderer(
     },
   });
 
-  const sort_bind_group = device.createBindGroup({
-    label: 'sort',
-    layout: preprocess_pipeline.getBindGroupLayout(2),
+
+
+  const pre_gaussian_bind = device.createBindGroup({
+    label: 'pre_gaussian_bind',
+    layout: preprocess_pipeline.getBindGroupLayout(1),
     entries: [
-      { binding: 0, resource: { buffer: sorter.sort_info_buffer } },
-      { binding: 1, resource: { buffer: sorter.ping_pong[0].sort_depths_buffer } },
-      { binding: 2, resource: { buffer: sorter.ping_pong[0].sort_indices_buffer } },
-      { binding: 3, resource: { buffer: sorter.sort_dispatch_indirect_buffer } },
+      { binding: 0, resource: { buffer: pc.gaussian_3d_buffer } }, { binding: 1, resource: { buffer: splatBuffer } },
     ],
   });
 
+    const pre_camera_bind = device.createBindGroup({
+    label: 'pre_camera_bind',
+    layout: preprocess_pipeline.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: camera_buffer } }],
+  });
 
   // ===============================================
   //    Create Render Pipeline and Bind Groups
@@ -79,24 +84,27 @@ export default function get_renderer(
     fragment: {module: shader, entryPoint: 'fs_main', targets: [{ format: presentation_format }],},
   });
 
-  //create the camera bind group
-  const camera_bind = device.createBindGroup({
-    label: 'camera_bind',
-    layout: pipeline_render.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: camera_buffer } }],
-  });
 
-  //create gaussian bind group
-  const gaussian_bind = device.createBindGroup({
-    label: 'gaussian_bind',
-    layout: pipeline_render.getBindGroupLayout(1),
-    entries: [{ binding: 0, resource: { buffer: pc.gaussian_3d_buffer } }],
-  });
 
   // ===============================================
   //    Command Encoder Functions
   // ===============================================
-  const render = (encoder: GPUCommandEncoder, 
+  const preprocess = (encoder: GPUCommandEncoder) => {
+    const pass = encoder.beginComputePass({ label: 'preprocess' });
+    //run the preprocess pipeline, bind the preprocess camera and gaussain bind groups and dispatch
+    pass.setPipeline(preprocess_pipeline);
+    pass.setBindGroup(0, pre_camera_bind);
+    pass.setBindGroup(1, pre_gaussian_bind);
+    //calculate the size of each work group
+    const workgroupSize = Math.ceil(pc.num_points / C.histogram_wg_size);
+
+    //dispatch
+    pass.dispatchWorkgroups(workgroupSize);
+    pass.end();
+  };
+
+
+  const render = (encoder: GPUCommandEncoder,
     texture_view: GPUTextureView) => {
       //setup the render pass
     const pass = encoder.beginRenderPass({ label: 'pass',
@@ -107,10 +115,15 @@ export default function get_renderer(
         }
       ],
     });
+
+      const splatBind = device.createBindGroup({
+    label: 'splatBind',
+    layout: pipeline_render.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: splatBuffer } }],
+  });
     //render pass should use the render pipeline, camera and guassian binds and the indirect draw buffer to draw
     pass.setPipeline(pipeline_render);
-    pass.setBindGroup(0, camera_bind);
-    pass.setBindGroup(1, gaussian_bind);
+    pass.setBindGroup(0, splatBind);
     pass.drawIndirect(indirect_draw_buff, 0);
     pass.end();
   };
@@ -120,6 +133,8 @@ export default function get_renderer(
   // ===============================================
   return {
     frame: (encoder: GPUCommandEncoder, texture_view: GPUTextureView) => {
+      //run preprocess then render
+      preprocess(encoder);
       render(encoder, texture_view);
     },
     camera_buffer,

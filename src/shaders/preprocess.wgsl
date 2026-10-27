@@ -57,8 +57,15 @@ struct Gaussian {
 
 struct Splat {
     //TODO: store information for 2D splat rendering
-    placeholder: u32, // WGSL forbids empty structs; replace with real fields
+    center: u32,
 };
+
+@group(0) @binding(0)
+var<uniform> camera: CameraUniforms;
+@group(1) @binding(0)
+var<storage, read_write> gaussianArr : array<Gaussian>;
+@group(1) @binding(1)
+var<storage, read_write> splatArr : array<Splat>;
 
 //TODO: bind your data here
 @group(2) @binding(0)
@@ -111,7 +118,18 @@ fn computeColorFromSH(dir: vec3<f32>, v_idx: u32, sh_deg: u32) -> vec3<f32> {
 
 @compute @workgroup_size(workgroupSize,1,1)
 fn preprocess(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) wgs: vec3<u32>) {
-    let idx = gid.x;
+    let index = gid.x;
+    if index >= arrayLength(&gaussianArr) { return; }
+    let vert = gaussianArr[index];
+    let v1 = unpack2x16float(vert.pos_opacity[0]);
+    let v2 = unpack2x16float(vert.pos_opacity[1]);
+    let pos = camera.proj * camera.view * vec4<f32>(v1.x, v1.y, v2.x, 1.);
+    var splatPos = vec2<f32>(2., 2.);
+    if pos.w > 0. {
+        splatPos = pos.xy / pos.w;
+    }
+    splatArr[index].center = pack2x16float(splatPos);
+
     //TODO: set up pipeline as described in instruction
 
     let keys_per_dispatch = workgroupSize * sortKeyPerThread; 
