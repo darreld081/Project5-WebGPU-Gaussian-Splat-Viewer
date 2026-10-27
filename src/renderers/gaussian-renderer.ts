@@ -5,7 +5,7 @@ import { get_sorter,c_histogram_block_rows,C } from '../sort/sort';
 import { Renderer } from './renderer';
 
 export interface GaussianRenderer extends Renderer {
-
+  set_gaussian_multiplier: (value: number) => void,
 }
 
 // Utility to create GPU buffers
@@ -35,7 +35,10 @@ export default function get_renderer(
   // ===============================================
 
   const nulling_data = new Uint32Array([0]);
-  const splatBuffer = createBuffer( device, 'splatBuffer', pc.num_points * 4, GPUBufferUsage.STORAGE);
+  const deg = pc.sh_deg;
+  const numPointsSize = pc.num_points * 8;
+  const renderSettings = createBuffer(device,'renderSettings', 8, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, new Float32Array([1.0, deg]));
+  const splatBuffer = createBuffer( device, 'splatBuffer', numPointsSize, GPUBufferUsage.STORAGE);
 
   // ===============================================
   //    Create Compute Pipeline and Bind Groups
@@ -66,7 +69,10 @@ export default function get_renderer(
     const pre_camera_bind = device.createBindGroup({
     label: 'pre_camera_bind',
     layout: preprocess_pipeline.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: camera_buffer } }],
+    entries: [
+      { binding: 0, resource: { buffer: camera_buffer } },
+      { binding: 1, resource: { buffer: renderSettings } },
+    ],
   });
 
   const culling_bind = device.createBindGroup({
@@ -140,11 +146,15 @@ export default function get_renderer(
   //    Return Render Object
   // ===============================================
   return {
+        set_gaussian_multiplier: (value: number) => {
+      device.queue.writeBuffer(renderSettings, 0, new Float32Array([value]));
+    },
     frame: (encoder: GPUCommandEncoder, texture_view: GPUTextureView) => {
       device.queue.writeBuffer(sorter.sort_info_buffer, 0, nulling_data);
       preprocess(encoder);
       render(encoder, texture_view);
     },
     camera_buffer,
+
   };
 }

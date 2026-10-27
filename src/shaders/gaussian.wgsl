@@ -1,5 +1,6 @@
 struct Splat {
     center: u32,
+    size: u32,
 };
 
 @group(0) @binding(0)
@@ -10,8 +11,6 @@ struct VertexOutput {
     //TODO: information passed from vertex shader to fragment shader
 };
 
-const square_size = 0.01;
-
 //create array representing the square corners
 var<private> corners = array<vec2<f32>, 6>(vec2<f32>(-1., -1.),vec2<f32>( 1., -1.),vec2<f32>(-1.,  1.),vec2<f32>(-1.,  1.),vec2<f32>( 1., -1.),vec2<f32>( 1.,  1.),);
 
@@ -21,8 +20,16 @@ fn vs_main(
     @builtin(instance_index) instance_index: u32,
 ) -> VertexOutput {
     var out: VertexOutput;
-    let center = unpack2x16float(splatArr[instance_index].center);
-    out.position = vec4<f32>(center + corners[vertex_index] * square_size * 0.5, 0, 1);
+    let u32center = splatArr[instance_index].center;
+    let u32size = splatArr[instance_index].size;
+    //convert to float
+    let size = unpack2x16float(u32size);
+    let center = unpack2x16float(u32center);
+    let cornerOffset = size * corners[vertex_index] * 0.5;
+    let out_x = center + cornerOffset;
+    let out_y = 0.;
+    let out_z = 1.;
+    out.position = vec4<f32>(out_x, out_y, out_z);
     return out;
 }
 

@@ -57,11 +57,15 @@ struct Gaussian {
 
 struct Splat {
     //TODO: store information for 2D splat rendering
+    
     center: u32,
+    size: u32,
 };
 
 @group(0) @binding(0)
 var<uniform> camera: CameraUniforms;
+@group(0) @binding(1)
+var<uniform> renderSettings: RenderSettings;
 @group(1) @binding(0)
 var<storage, read_write> gaussianArr : array<Gaussian>;
 @group(1) @binding(1)
@@ -145,6 +149,10 @@ fn preprocess(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgr
         let ndc = pos.xyz / pos.w;
         let slot = atomicAdd(&sort_infos.keys_size, 1u);
         splatArr[slot].center = pack2x16float(ndc.xy);
+        let convertedSize = vec2<f32>(0.01);
+        let splatSize = renderSettings.gaussian_scaling * convertedSize;
+        let splatSizeAsFload = pack2x16float(splatSize);
+        splatArr[slot].size = splatSizeAsFload;
         let keys_per_dispatch = workgroupSize * sortKeyPerThread; 
     }
 }
