@@ -36,7 +36,7 @@ export default function get_renderer(
 
   const nulling_data = new Uint32Array([0]);
   const deg = pc.sh_deg;
-  const numPointsSize = pc.num_points * 8;
+  const numPointsSize = pc.num_points * 16;
   const renderSettings = createBuffer(device,'renderSettings', 8, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, new Float32Array([1.0, deg]));
   const splatBuffer = createBuffer( device, 'splatBuffer', numPointsSize, GPUBufferUsage.STORAGE);
 
@@ -63,6 +63,7 @@ export default function get_renderer(
     layout: preprocess_pipeline.getBindGroupLayout(1),
     entries: [
       { binding: 0, resource: { buffer: pc.gaussian_3d_buffer } }, { binding: 1, resource: { buffer: splatBuffer } },
+      { binding: 2, resource: { buffer: pc.sh_buffer } },
     ],
   });
 
@@ -78,7 +79,16 @@ export default function get_renderer(
   const culling_bind = device.createBindGroup({
     label: 'culling_bind',
     layout: preprocess_pipeline.getBindGroupLayout(2),
-    entries: [{ binding: 0, resource: { buffer: sorter.sort_info_buffer } }],
+    entries: [
+      { binding: 0, resource: 
+        { buffer: sorter.sort_info_buffer } },
+      { binding: 1, resource: 
+        { buffer: sorter.ping_pong[0].sort_depths_buffer } },
+      { binding: 2, resource: 
+        { buffer: sorter.ping_pong[0].sort_indices_buffer } },
+      { binding: 3, resource: 
+        { buffer: sorter.sort_dispatch_indirect_buffer } },
+    ],
   });
 
   // ===============================================
@@ -133,7 +143,10 @@ export default function get_renderer(
       const splatBind = device.createBindGroup({
     label: 'splatBind',
     layout: pipeline_render.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: splatBuffer } }],
+    entries: [
+      { binding: 0, resource: { buffer: splatBuffer } },
+      { binding: 1, resource: { buffer: sorter.ping_pong[0].sort_indices_buffer } },
+    ],
   });
     //render pass should use the render pipeline, camera and guassian binds and the indirect draw buffer to draw
     pass.setPipeline(pipeline_render);
@@ -151,7 +164,9 @@ export default function get_renderer(
     },
     frame: (encoder: GPUCommandEncoder, texture_view: GPUTextureView) => {
       device.queue.writeBuffer(sorter.sort_info_buffer, 0, nulling_data);
+      device.queue.writeBuffer(sorter.sort_dispatch_indirect_buffer, 0, nulling_data);
       preprocess(encoder);
+      sorter.sort(encoder);
       render(encoder, texture_view);
     },
     camera_buffer,
