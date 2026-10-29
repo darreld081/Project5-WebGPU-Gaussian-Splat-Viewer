@@ -62,6 +62,8 @@ struct Splat {
     size: u32,
     color_a: u32,
     color_b: u32,
+    conic_a: u32,
+    conic_b: u32,
 };
 
 @group(0) @binding(0)
@@ -194,12 +196,23 @@ fn calc2dcov(viewPos: vec3<f32>, cov3d: mat3x3<f32>) -> vec3<f32> {
     let cov = T * cov3d * transpose(T);
     return vec3<f32>(cov[0][0] + 0.3, cov[0][1], cov[1][1] + 0.3);
 }
-fn splatRadius(cov2d: vec3<f32>) -> f32 {
-    let determinant = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
-    let mid = 0.5 * (cov2d.x + cov2d.z);
+fn splatRadius(cov: vec3<f32>) -> f32 {
+    let determinant = cov.x * cov.z - cov.y * cov.y;
+    let mid = 0.5 * (cov.x + cov.z);
     let largestEigenvalue = mid + sqrt(max(0.1, mid * mid - determinant));
     return ceil(3. * sqrt(largestEigenvalue));
 }
+fn calcConic(cov: vec3<f32>) -> 
+    vec3<f32> {
+        let determinant = conicDeterminant(cov);
+        return vec3<f32>(cov.z / determinant, 
+            -cov.y / determinant, 
+            cov.x / determinant);
+    }
+fn conicDeterminant(cov: vec3<f32>) ->
+    f32 {
+        return cov.x * cov.z - cov.y * cov.y;
+    }
 fn calcSize(radius: f32) -> vec2<f32> {
     return 4. * radius / camera.viewport;
 }
@@ -284,24 +297,29 @@ fn preprocess(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgr
     let clipPos = camera.proj * viewPos;
 
     if should_be_culled(clipPos) == false {
-        let ndc = norm(clipPos);
-        let cov3d = calc3dcov(getRot(gaussian),
+        let cam = norm(clipPos);
+        let cov_3 = calc3dcov(getRot(gaussian),
             getScale(gaussian));
-        let cov2d = calc2dcov(viewPos.xyz, cov3d);
-        if cov2d.x * cov2d.z - cov2d.y * cov2d.y <= 0. {
+        let cov_2 = calc2dcov(viewPos.xyz, cov_3);
+        if cov_2.x * cov_2.z - cov_2.y * cov_2.y <= 0. {
             return; 
         }
-        let quadSize = calcSize(splatRadius(cov2d));
+        let quadSize = calcSize(splatRadius(cov_2));
+        let conic = calcConic(cov_2);
         let camPos = camera.view_inv[3].xyz;
         let viewDir = normalize(worldPos - camPos);
         let color = computeColorFromSH(viewDir, index, u32(renderSettings.sh_deg));
         let opacity = 1. / (1. + exp(-getOpacity(gaussian)));
         let slot = atomicAdd(&sort_infos.keys_size, 1u);
         sort_depths[slot] = 0xFFFFFFFFu - bitcast<u32>(viewPos.z);
-        splatArr[slot].center = pack2x16float(ndc.xy);
+        splatArr[slot].conic_b = pack2x16float(vec2<f32>(conic.z, 0.));
+        splatArr[slot].conic_a = pack2x16float(conic.xy);
+        splatArr[slot].center = pack2x16float(cam.xy);
         splatArr[slot].size = pack2x16float(quadSize);
         splatArr[slot].color_a = pack2x16float(color.rg);
         splatArr[slot].color_b = pack2x16float(vec2<f32>(color.b, opacity));
+
+        
         
         sort_indices[slot] = slot;
         let keysToDispatch = workgroupSize * sortKeyPerThread;

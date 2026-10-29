@@ -29,14 +29,14 @@ export default function get_renderer(
 ): GaussianRenderer {
 
   const sorter = get_sorter(pc.num_points, device);
-  
+
   // ===============================================
   //            Initialize GPU Buffers
   // ===============================================
 
   const nulling_data = new Uint32Array([0]);
   const deg = pc.sh_deg;
-  const numPointsSize = pc.num_points * 16;
+  const numPointsSize = pc.num_points * 24;
   const renderSettings = createBuffer(device,'renderSettings', 8, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, new Float32Array([1.0, deg]));
   const splatBuffer = createBuffer( device, 'splatBuffer', numPointsSize, GPUBufferUsage.STORAGE);
 
@@ -80,13 +80,13 @@ export default function get_renderer(
     label: 'culling_bind',
     layout: preprocess_pipeline.getBindGroupLayout(2),
     entries: [
-      { binding: 0, resource: 
+      { binding: 0, resource:
         { buffer: sorter.sort_info_buffer } },
-      { binding: 1, resource: 
+      { binding: 1, resource:
         { buffer: sorter.ping_pong[0].sort_depths_buffer } },
-      { binding: 2, resource: 
+      { binding: 2, resource:
         { buffer: sorter.ping_pong[0].sort_indices_buffer } },
-      { binding: 3, resource: 
+      { binding: 3, resource:
         { buffer: sorter.sort_dispatch_indirect_buffer } },
     ],
   });
@@ -99,14 +99,32 @@ export default function get_renderer(
   const shader = device.createShaderModule({ code: renderWGSL });
   //create the render pipeline
   const pipeline_render = device.createRenderPipeline({
+    fragment: {
+      module: shader,
+      entryPoint: 'fs_main',
+      targets: [{
+        format: presentation_format,
+        blend: {
+          alpha: {operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha'},
+          color: {operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha'},
+        },
+      }],
+    },
     label: 'pipeline_render',
     layout: 'auto',
     primitive: { topology: 'triangle-list',},
     vertex: { module: shader, entryPoint: 'vs_main',},
-    fragment: {module: shader, entryPoint: 'fs_main', targets: [{ format: presentation_format }],},
   });
 
-
+  const splatBind = device.createBindGroup({
+    label: 'splatBind',
+    layout: pipeline_render.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: splatBuffer } },
+      { binding: 1, resource: { buffer: sorter.ping_pong[0].sort_indices_buffer } },
+      { binding: 2, resource: { buffer: camera_buffer } },
+    ],
+  });
 
   // ===============================================
   //    Command Encoder Functions
@@ -140,14 +158,6 @@ export default function get_renderer(
       ],
     });
 
-      const splatBind = device.createBindGroup({
-    label: 'splatBind',
-    layout: pipeline_render.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: { buffer: splatBuffer } },
-      { binding: 1, resource: { buffer: sorter.ping_pong[0].sort_indices_buffer } },
-    ],
-  });
     //render pass should use the render pipeline, camera and guassian binds and the indirect draw buffer to draw
     pass.setPipeline(pipeline_render);
     pass.setBindGroup(0, splatBind);
