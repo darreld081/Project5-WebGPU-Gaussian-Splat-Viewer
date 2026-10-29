@@ -7,12 +7,12 @@
 
 ### Github pages
 
-![Live Demo - Github Pages](https://darreld081.github.io/Project5-WebGPU-Gaussian-Splat-Viewer/)
+[Live Demo - Github Pages](https://darreld081.github.io/Project5-WebGPU-Gaussian-Splat-Viewer/)
 
 ### Demo Video/GIF
 
-![Recording Part 1](img/demo_p1.mp4)
-![Recording Part 2](img/demo_p2.mp4)
+[Recording Part 1](img/demo_p1.mp4)
+[Recording Part 2](img/demo_p2.mp4)
 
 ![Final render](img/gaussian_mult_1.2.png)
 
